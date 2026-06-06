@@ -311,7 +311,7 @@ function startBattery() {
   }
 }
 
-// ====== Countdown ======
+// ====== Countdown (fetches from server - persists) ======
 function startCountdown() {
   async function update() {
     try {
@@ -336,7 +336,7 @@ function startCountdown() {
   setInterval(update, 1000);
 }
 
-// ====== Verified Counts ======
+// ====== Verified Counts (fetches from server - persists) ======
 async function loadCounts() {
   try {
     const stats = await apiGet('/api/stats');
@@ -348,7 +348,7 @@ async function loadCounts() {
   }
 }
 
-// ====== VCF State ======
+// ====== VCF State (fetches from server - persists) ======
 async function loadVCFState() {
   try {
     const vcf = await apiGet('/api/vcf');
@@ -426,7 +426,7 @@ verifyForm.addEventListener('submit', async (e) => {
   submitBtn.textContent = 'Verifying...';
 
   try {
-    // Save to backend
+    // Save to backend (persists on server)
     await apiPost('/api/members', {
       name: name,
       email: email,
@@ -434,7 +434,7 @@ verifyForm.addEventListener('submit', async (e) => {
       country: country.name
     });
 
-    // Update counts
+    // Update counts from server
     await loadCounts();
 
     // Play speech
