@@ -3,18 +3,27 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 
-// ====== Data Storage (file persistence) ======
-const DATA_FILE = path.join(__dirname, 'data.json');
+// ====== Data Storage (Render persistent disk or local fallback) ======
+// Render provides persistent disk at /var/data
+// We check multiple paths for compatibility
+const DATA_DIR = process.env.RENDER ? '/var/data' : __dirname;
+const DATA_FILE = path.join(DATA_DIR, 'data.json');
 
 function loadData() {
   try {
     if (fs.existsSync(DATA_FILE)) {
-      return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+      const raw = fs.readFileSync(DATA_FILE, 'utf8');
+      if (raw.trim()) {
+        return JSON.parse(raw);
+      }
     }
-  } catch (e) { console.error('Load error:', e); }
+  } catch (e) { 
+    console.error('Load error:', e); 
+  }
+  // Default data with 500 target
   return {
     members: [],
-    target: 30,
+    target: 500,
     endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     vcfEnabled: false,
     vcfName: null,
@@ -24,8 +33,16 @@ function loadData() {
 
 function saveData(data) {
   try {
+    // Ensure directory exists
+    const dir = path.dirname(DATA_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-  } catch (e) { console.error('Save error:', e); }
+    console.log('Data saved successfully');
+  } catch (e) { 
+    console.error('Save error:', e); 
+  }
 }
 
 let data = loadData();
@@ -72,7 +89,7 @@ function parseBody(req, callback) {
   });
 }
 
-// ====== Request Handler (works for both local & Vercel) ======
+// ====== Request Handler ======
 function handleRequest(req, res) {
   setCors(res);
 
@@ -149,6 +166,29 @@ function handleRequest(req, res) {
     return;
   }
 
+  // DELETE /api/members/:id - Delete single member
+  if (pathname.startsWith('/api/members/') && req.method === 'DELETE') {
+    const id = pathname.split('/')[3];
+    parseBody(req, (body) => {
+      if (body.password === 'confronter1') {
+        const idx = data.members.findIndex(m => m.id === id);
+        if (idx !== -1) {
+          data.members.splice(idx, 1);
+          saveData(data);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, deleted: id }));
+        } else {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Member not found' }));
+        }
+      } else {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized' }));
+      }
+    });
+    return;
+  }
+
   // GET /api/stats - Get stats
   if (pathname === '/api/stats' && req.method === 'GET') {
     const verified = data.members.filter(m => m.status === 'verified').length;
@@ -166,7 +206,7 @@ function handleRequest(req, res) {
   // PUT /api/stats - Update target and endDate
   if (pathname === '/api/stats' && req.method === 'PUT') {
     parseBody(req, (body) => {
-      if (body.target !== undefined) data.target = parseInt(body.target) || 30;
+      if (body.target !== undefined) data.target = parseInt(body.target) || 500;
       if (body.endDate) data.endDate = body.endDate;
       saveData(data);
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -256,14 +296,12 @@ function handleRequest(req, res) {
   });
 }
 
-// ====== Local Server (for development) ======
-if (!process.env.VERCEL) {
-  const PORT = process.env.PORT || 3000;
-  const server = http.createServer(handleRequest);
-  server.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-  });
-}
-
-// ====== Export for Vercel (serverless) ======
-module.exports = handleRequest;
+// ====== Local Server ======
+const PORT = process.env.PORT || 3000;
+const server = http.createServer(handleRequest);
+server.listen(PORT, () => {
+  console.log(`🚀 Confronter Tech Wizard Server running on http://localhost:${PORT}`);
+  console.log(`📁 Data file: ${DATA_FILE}`);
+  console.log(`🔐 Admin password: confronter1`);
+  console.log(`🎯 Default target: ${data.target} members`);
+});
